@@ -35,6 +35,9 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_msgs/msg/header.hpp>
 #include <string>
+#include <fstream>
+
+using namespace std;
 
 namespace kiss_icp_ros {
 
@@ -45,6 +48,9 @@ public:
     explicit OdometryServer(const rclcpp::NodeOptions &options);
 
 private:
+    /// Update all paramters
+    void get_all_parameters();
+
     /// Register new frame
     void RegisterFrame(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &msg);
 
@@ -83,6 +89,15 @@ private:
     /// Covariance diagonal
     double position_covariance_;
     double orientation_covariance_;
+
+    /// Save results
+    std::string results_file_name;
+    bool flag_save_results;
+    std::ofstream results_file;
+
+    /// Dynamic reconfigure event handler
+    std::shared_ptr<rclcpp::ParameterEventHandler> param_handler_;
+    std::shared_ptr<rclcpp::ParameterEventCallbackHandle> handle;
 };
 
 }  // namespace kiss_icp_ros

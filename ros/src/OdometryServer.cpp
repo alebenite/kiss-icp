@@ -45,6 +45,8 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_msgs/msg/string.hpp>
 
+using namespace std;
+
 namespace {
 Sophus::SE3d LookupTransform(const std::string &target_frame,
                              const std::string &source_frame,
@@ -100,12 +102,64 @@ OdometryServer::OdometryServer(const rclcpp::NodeOptions &options)
                     "[WARNING] max_range is smaller than min_range, settng min_range to 0.0");
         config.min_range = 0.0;
     }
+    
+    
+    /// Parameter event handler to reconfigure
+    param_handler_ = std::make_shared<rclcpp::ParameterEventHandler>(this);
+    
+    auto cb = [this](const rcl_interfaces::msg::ParameterEvent & event) { 
+    // Look for any updates to parameters in "/a_namespace" as well as any parameter changes 
+    // to our own node ("this_node") 
+        std::regex re("(/transformer*)"); 
+        ///cout << "Entra evento" << event.node << endl;
+        if (regex_match(event.node, re)) {
+                // You can also use 'get_parameters_from_event' to enumerate all changes that came
+                // in on this event
+                auto params = rclcpp::ParameterEventHandler::get_parameters_from_event(event);
+                for (auto & p : params) {
+                RCLCPP_INFO(
+                    this->get_logger(),
+                    "cb3: Received an update to parameter \"%s\" of type: %s: \"%s\"",
+                    p.get_name().c_str(),
+                    p.get_type_name().c_str(),
+                    p.value_to_string().c_str());
+                    
+                    // In case sub_topic is changed we need to resubscribe and republish them
+                    /*if (strcmp(p.get_name().c_str(), "pub_topic")==0) { //// TODO: Esto hay que cambiarlo a los nuevos params
+                        pub_topic = p.value_to_string().c_str();
+
+                        depth_pub_ = this->create_publisher<sensor_msgs::msg::Image>(pub_topic + "/range/image", 10);
+                        info_pub_ = this->create_publisher<transformer::msg::Lidar3dSensorInfo>(pub_topic + "/range/sensor_info", 10);
+                        cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(pub_topic + "/point_cloud", 10);///qos
+                    } else if (strcmp(p.get_name().c_str(), "sub_topic")==0) {
+                        sub_topic = p.value_to_string().c_str();
+
+                        depth_sub_ = this->create_subscription<sensor_msgs::msg::Image>(sub_topic + "/range_image", qos, std::bind(&Transformer_Node::depth_callback, this, std::placeholders::_1));
+                        cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(sub_topic + "/points", qos, std::bind(&Transformer_Node::cloud_callback, this, std::placeholders::_1));
+                        info_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(sub_topic + "range_info", qos, std::bind(&Transformer_Node::sensor_info_callback, this, std::placeholders::_1));
+                        
+                    } else if (strcmp(p.get_name().c_str(), "best_effort")==0) {
+                        if(p.as_bool()){
+                            //qos.reliability(RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT);
+                        } else{
+                            //qos.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE);
+                        }
+                    }*/
+                }
+                get_all_parameters();
+  			}
+		};
+    handle = param_handler_->add_parameter_event_callback(cb);
+
+    flag_save_results = declare_parameter<bool>("flag_save_results", false);
+    results_file_name = declare_parameter<std::string>("results_file_name", "/home/alex/ros2_ws/results/kissTestos.dat");
+
 
     // Construct the main KISS-ICP odometry node
     kiss_icp_ = std::make_unique<kiss_icp::pipeline::KissICP>(config);
 
     // Initialize subscribers
-    pointcloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
+    pointcloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(// TODO: Cambiar el topic y a ser posible editable por parametro
         "pointcloud_topic", rclcpp::SensorDataQoS(),
         std::bind(&OdometryServer::RegisterFrame, this, std::placeholders::_1));
 
@@ -126,6 +180,42 @@ OdometryServer::OdometryServer(const rclcpp::NodeOptions &options)
     tf2_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf2_buffer_);
 
     RCLCPP_INFO(this->get_logger(), "KISS-ICP ROS 2 odometry node initialized");
+
+    // Open file to save results
+		if (flag_save_results)///////Esto hay que ajustarlo para que se pueda modificar con el flag
+		{
+			if (results_file_name.size() < 5)
+			{
+				RCLCPP_WARN(this->get_logger(), "Invalid name for results file: ");
+				RCLCPP_WARN(this->get_logger(), results_file_name.c_str());
+				flag_save_results = false;
+			}
+			else
+			{
+                RCLCPP_INFO(this->get_logger(), "Saving results to ");
+                RCLCPP_INFO(this->get_logger(), results_file_name.c_str());
+				results_file.open(results_file_name);
+			}
+		}
+}
+void get_all_parameters() {
+
+    base_frame_ = get_parameter("base_frame").get_parameter_value().get<std::string>();
+    odom_frame_ = get_parameter("odom_frame").get_parameter_value().get<std::string>();
+    publish_odom_tf_ = get_parameter("publish_odom_tf").get_parameter_value().get<bool>();
+    publish_debug_clouds_ = get_parameter("publish_debug_clouds").get_parameter_value().get<bool>();
+    position_covariance_ = get_parameter("position_covariance").get_parameter_value().get<double>();
+    orientation_covariance_ = get_parameter("orientation_covariance").get_parameter_value().get<double>();
+    config.max_range = get_parameter("max_range").get_parameter_value().get<double>();
+    config.min_range = get_parameter("min_range").get_parameter_value().get<double>();
+    config.deskew_ = get_parameter("deskew").get_parameter_value().get<bool>();
+    config.voxel_size = get_parameter("voxel_size").get_parameter_value().get<double>();
+    config.max_points_per_voxel = get_parameter("max_points_per_voxel").get_parameter_value().get<int>();
+    config.initial_threshold = get_parameter("initial_threshold").get_parameter_value().get<double>();
+    config.min_motion_th = get_parameter("min_motion_th").get_parameter_value().get<double>();
+    config.max_num_iterations = get_parameter("max_num_iterations").get_parameter_value().get<int>();
+    config.convergence_criterion = get_parameter("convergence_criterion").get_parameter_value().get<double>();
+    config.max_num_threads = get_parameter("max_num_threads").get_parameter_value().get<int>();
 }
 
 void OdometryServer::RegisterFrame(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &msg) {
@@ -181,6 +271,18 @@ void OdometryServer::PublishOdometry(const Sophus::SE3d &kiss_pose,
     odom_msg.pose.covariance[28] = orientation_covariance_;
     odom_msg.pose.covariance[35] = orientation_covariance_;
     odom_publisher_->publish(std::move(odom_msg));
+
+    // Save results to file
+		if (flag_save_results)
+		{
+			rclcpp::Time timestamp(header.stamp);
+			char timestr[20];
+			snprintf(timestr, sizeof(timestr), "%.9f", timestamp.seconds());
+			results_file << timestr << " "
+			 			 << odom_msg.pose.pose.position.x << " " << odom_msg.pose.pose.position.y << " " << odom_msg.pose.pose.position.z << " "
+			 			 << odom_msg.pose.pose.orientation.x << " " << odom_msg.pose.pose.orientation.y << " " << odom_msg.pose.pose.orientation.z << " " << odom_msg.pose.pose.orientation.w
+						 << std::endl;
+		}
 }
 
 void OdometryServer::PublishClouds(const std::vector<Eigen::Vector3d> frame,
