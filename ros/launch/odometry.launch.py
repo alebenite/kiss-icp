@@ -64,7 +64,7 @@ def generate_launch_description():
 
     # tf tree configuration, these are the likely 3 parameters to change and nothing else
     base_frame = LaunchConfiguration("base_frame", default="")
-    odom_frame = LaunchConfiguration("odom_frame", default="odom")
+    odom_frame = LaunchConfiguration("odom_frame", default="world")
     publish_odom_tf = LaunchConfiguration("publish_odom_tf", default=True)
 
     # ROS configuration

@@ -37,6 +37,13 @@
 #include <string>
 #include <fstream>
 
+// Reconfigure params
+#include <memory>
+#include <regex>
+#include <rcl_interfaces/srv/set_parameters.hpp>
+#include <rcl_interfaces/msg/parameter.hpp>
+#include <rcl_interfaces/msg/set_parameters_result.hpp>
+
 using namespace std;
 
 namespace kiss_icp_ros {
@@ -83,7 +90,7 @@ private:
     std::unique_ptr<kiss_icp::pipeline::KissICP> kiss_icp_;
 
     /// Global/map coordinate frame.
-    std::string odom_frame_{"odom"};
+    std::string odom_frame_{"world"};
     std::string base_frame_{};
 
     /// Covariance diagonal
